@@ -2,8 +2,6 @@
 const fs = require("fs");
 require("dotenv").config();
 const axios = require("axios");
-
-const { execSync } = require("child_process");
 const colors = require("colors");
 
 const simpleGit = require("simple-git");
@@ -12,15 +10,6 @@ simpleGit().clean(simpleGit.CleanOptions.FORCE);
 const { Octokit, App } = require("octokit");
 // Create a personal access token at https://github.com/settings/tokens/new?scopes=repo
 const octokit = new Octokit({ auth: process.env.GH_ACCESS_TOKEN });
-
-// const options = {
-//   baseDir: process.cwd(),
-//   binary: "git",
-//   maxConcurrentProcesses: 6,
-// };
-
-// when setting all options in a single object
-// const git = simpleGit();
 
 // console.log('First, some info about your accounts...')
 // const workspace = prompt('Enter the name of your Bitbucket workspace: ')
@@ -53,11 +42,13 @@ const getAllRepoData = async () => {
 //Populate repoDataList with slug and clone url
 const makeRepoDataList = async () => {
   const data = await getAllRepoData();
+  //Pulling out just the slug and clone url from the api response array
   data.values.forEach((val) => {
     const repoInfo = {
       slug: val.slug,
       clone: val.links.clone[0].href,
     };
+    //currently pushing into global const repoDataList
     repoDataList.push(repoInfo);
   });
 };
@@ -81,13 +72,17 @@ const createGitHubRepo = async (repoName) => {
 };
 
 async function pushToGithub(gitName, remoteUrl) {
+    // workingDir to set path for simpleGit
   const workingDir = __dirname + `/${gitName}.git`;
   try {
     console.log(`Removing remote origin...`.bgGreen);
+    //.removeRemote by  (name)
     await simpleGit(workingDir).removeRemote("origin");
     console.log(`Setting remote origin to ${remoteUrl}`.bgGreen);
+    // .addremote takes (name, remote)
     await simpleGit(workingDir).addRemote("origin", remoteUrl);
     console.log(`Pushing repo to GitHub...`.rainbow);
+    // simpleGit accepts flags as a second argument as an array of strings
     await simpleGit(workingDir).push("origin", ["--mirror"]);
   } catch (error) {
     console.log(error);
@@ -106,7 +101,7 @@ async function pushToGithub(gitName, remoteUrl) {
   //get repo data into array
   await makeRepoDataList();
   // console.log(repoDataList)
-  const { clone, slug } = repoDataList[0];
+  const { clone, slug } = repoDataList[1];
   // create github remote repo
   await createGitHubRepo(slug);
   const remoteUrl = `https://github.com/curtisgry/${slug}`;
@@ -115,7 +110,7 @@ async function pushToGithub(gitName, remoteUrl) {
   //for deleting folder later
   const repoPath = __dirname + `/${slug}.git`;
   //repo name and remote url
-  await pushToGithub("test-repo", remoteUrl);
+  await pushToGithub(slug, remoteUrl);
 
   // Cleanup! delete directory
   await fs.rmdir(repoPath, { recursive: true }, (err) => {
