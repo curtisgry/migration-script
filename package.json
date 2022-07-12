@@ -10,10 +10,13 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^0.27.2",
+    "colors": "^1.4.0",
     "dotenv": "^16.0.1",
     "express": "^4.18.1",
+    "octokit": "^2.0.3",
     "open": "^8.4.0",
     "prompt-sync": "^4.2.0",
+    "simple-git": "^3.10.0",
     "simple-oauth2": "^4.3.0",
     "yargs": "^17.5.1"
   }
