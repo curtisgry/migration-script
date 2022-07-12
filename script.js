@@ -13,14 +13,14 @@ const { Octokit, App } = require("octokit");
 // Create a personal access token at https://github.com/settings/tokens/new?scopes=repo
 const octokit = new Octokit({ auth: process.env.GH_ACCESS_TOKEN });
 
-const options = {
-  baseDir: process.cwd(),
-  binary: "git",
-  maxConcurrentProcesses: 6,
-};
+// const options = {
+//   baseDir: process.cwd(),
+//   binary: "git",
+//   maxConcurrentProcesses: 6,
+// };
 
 // when setting all options in a single object
-const git = simpleGit(options);
+// const git = simpleGit();
 
 // console.log('First, some info about your accounts...')
 // const workspace = prompt('Enter the name of your Bitbucket workspace: ')
@@ -78,30 +78,55 @@ async function basicShellCommand(command) {
 
 const cloneRepo = async (repoLink) => {
   console.log(`Cloning`, `${repoLink} ...`.green);
-  await git.mirror(repoLink);
+  await simpleGit().mirror(repoLink);
 };
 
 const createGitHubRepo = async (repoName) => {
   console.log(`Creating GitHub repository...`.green);
   try {
     const test = await octokit.request(`POST /user/repos`, {
-        name: repoName
+      name: repoName,
     });
-  console.log(test);
+    console.log(test);
   } catch (error) {
-    console.log(`${error}`.red)
+    console.log(`${error}`.red);
   }
-
 };
 
+async function testRemote(gitName, remoteUrl) {
+    const workingDir = __dirname + `/${gitName}.git`
+    console.log(workingDir)
+  try {
+    console.log(`Removing remote origin...`.bgGreen)
+    await simpleGit(workingDir).removeRemote('origin')
+    console.log(`Setting remote origin to ${remoteUrl}`)
+    await simpleGit(workingDir).addRemote("origin", remoteUrl)  
+    await simpleGit(workingDir).push("origin", ["--mirror"]);
+  } catch (error) {
+    console.log(error);
+  }
+
+  const list = await simpleGit(workingDir).getRemotes( (err, data) => {
+    if (!err) {
+      console.log("Remote url for repository at " + __dirname + ":");
+      console.log(data);
+    }
+  });
+  console.log(list);
+}
+
 (async () => {
-  // Compare: https://docs.github.com/en/rest/reference/users#get-the-authenticated-user
+  // Authenticate octokit
   const {
     data: { login },
   } = await octokit.rest.users.getAuthenticated();
   console.log("Hello, %s", login);
+
+  const remoteUrl = "https://github.com/curtisgry/test-from-node"
+  await createGitHubRepo("test-from-node");
   await makeRepoDataList();
   // console.log(repoDataList)
-  // await cloneRepo(repoDataList[0].clone)
-  await createGitHubRepo("test");
+  await cloneRepo(repoDataList[0].clone)
+  await testRemote('test-repo', remoteUrl);
+  
 })();
