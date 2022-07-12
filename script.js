@@ -1,5 +1,5 @@
-// const fs = require("fs");
 // const prompt = require("prompt-sync")({ sigint: true });
+const fs = require("fs");
 require("dotenv").config();
 const axios = require("axios");
 
@@ -62,20 +62,7 @@ const makeRepoDataList = async () => {
   });
 };
 
-async function basicShellCommand(command) {
-  // run the `ls` command using exec
-  await execSync(command, (err, output) => {
-    // once the command has completed, the callback function is called
-    if (err) {
-      // log and return if we encounter an error
-      console.error("could not execute command: ", err);
-      return;
-    }
-    // log the output received from the command
-    console.log("Output: \n", output);
-  });
-}
-
+// Clone repo from bitbucket
 const cloneRepo = async (repoLink) => {
   console.log(`Cloning`, `${repoLink} ...`.green);
   await simpleGit().mirror(repoLink);
@@ -84,35 +71,27 @@ const cloneRepo = async (repoLink) => {
 const createGitHubRepo = async (repoName) => {
   console.log(`Creating GitHub repository...`.green);
   try {
+    // will return data containing remote url probably better to use later
     const test = await octokit.request(`POST /user/repos`, {
       name: repoName,
     });
-    console.log(test);
   } catch (error) {
     console.log(`${error}`.red);
   }
 };
 
-async function testRemote(gitName, remoteUrl) {
-    const workingDir = __dirname + `/${gitName}.git`
-    console.log(workingDir)
+async function pushToGithub(gitName, remoteUrl) {
+  const workingDir = __dirname + `/${gitName}.git`;
   try {
-    console.log(`Removing remote origin...`.bgGreen)
-    await simpleGit(workingDir).removeRemote('origin')
-    console.log(`Setting remote origin to ${remoteUrl}`)
-    await simpleGit(workingDir).addRemote("origin", remoteUrl)  
+    console.log(`Removing remote origin...`.bgGreen);
+    await simpleGit(workingDir).removeRemote("origin");
+    console.log(`Setting remote origin to ${remoteUrl}`.bgGreen);
+    await simpleGit(workingDir).addRemote("origin", remoteUrl);
+    console.log(`Pushing repo to GitHub...`.rainbow);
     await simpleGit(workingDir).push("origin", ["--mirror"]);
   } catch (error) {
     console.log(error);
   }
-
-  const list = await simpleGit(workingDir).getRemotes( (err, data) => {
-    if (!err) {
-      console.log("Remote url for repository at " + __dirname + ":");
-      console.log(data);
-    }
-  });
-  console.log(list);
 }
 
 (async () => {
@@ -122,11 +101,29 @@ async function testRemote(gitName, remoteUrl) {
   } = await octokit.rest.users.getAuthenticated();
   console.log("Hello, %s", login);
 
-  const remoteUrl = "https://github.com/curtisgry/test-from-node"
-  await createGitHubRepo("test-from-node");
+  //for testing
+
+  //get repo data into array
   await makeRepoDataList();
   // console.log(repoDataList)
-  await cloneRepo(repoDataList[0].clone)
-  await testRemote('test-repo', remoteUrl);
-  
+  const { clone, slug } = repoDataList[0];
+  // create github remote repo
+  await createGitHubRepo(slug);
+  const remoteUrl = `https://github.com/curtisgry/${slug}`;
+  // clone repo from bitbucket
+  await cloneRepo(clone);
+  //for deleting folder later
+  const repoPath = __dirname + `/${slug}.git`;
+  //repo name and remote url
+  await pushToGithub("test-repo", remoteUrl);
+
+  // Cleanup! delete directory
+  await fs.rmdir(repoPath, { recursive: true }, (err) => {
+    if (err) {
+      throw err;
+    }
+    console.log(`Removing ${slug} directory...`);
+  });
+
+  console.log(`Finished! Here is the new GitHub repo: ${remoteUrl}`.green);
 })();
