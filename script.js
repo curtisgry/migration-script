@@ -84,7 +84,7 @@ const cloneRepoList = async (arr) => {
     await cloneRepo(clone);
     const link = await createGitHubRepo(slug);
     newRepoLinks.push(link)
-    await pushToGithub(slug, clone);
+    await pushToGithub(slug, link);
   }
 };
 
@@ -99,8 +99,7 @@ const createGitHubRepo = async (repoName) => {
     const test = await octokit.request(`POST /user/repos`, {
       name: repoName,
     });
-    
-    const {clone_url} = test;
+    const {clone_url} = test.data;
     return clone_url;
 
   } catch (error) {
