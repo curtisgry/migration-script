@@ -96,10 +96,10 @@ const createGitHubRepo = async (repoName) => {
   console.log(`Creating GitHub repository...`.green);
   try {
     // will return data containing remote url probably better to use later
-    // const test = await octokit.request(`POST /user/repos`, {
-    //   name: repoName,
-    // });
-    const test = {clone_url: 'TEST'}
+    const test = await octokit.request(`POST /user/repos`, {
+      name: repoName,
+    });
+    
     const {clone_url} = test;
     return clone_url;
 
@@ -113,6 +113,7 @@ const createGitHubRepo = async (repoName) => {
 
 
 async function pushToGithub(gitName, remoteUrl) {
+  if(!gitName && remoteUrl) return console.log('Error, missing name or url'.red)
   // workingDir to set path for simpleGit
   const workingDir = __dirname + `/repos/${gitName}.git`;
   try {
@@ -121,15 +122,10 @@ async function pushToGithub(gitName, remoteUrl) {
     await simpleGit(workingDir).removeRemote("origin");
     console.log(`Setting remote origin to ${remoteUrl}`.bgGreen);
     // .addremote takes (name, remote)
-    // await simpleGit(workingDir).addRemote("origin", remoteUrl);
-
-    console.log("Add remote".cyan);
-    await delay(2000);
+    await simpleGit(workingDir).addRemote("origin", remoteUrl);
     console.log(`Pushing repo to GitHub...`.rainbow);
     // simpleGit accepts flags as a second argument as an array of strings
-    // await simpleGit(workingDir).push("origin", ["--mirror"]);
-    await delay(2000);
-    console.log("Push to Github".cyan);
+    await simpleGit(workingDir).push("origin", ["--mirror"]);
     await delay(2000);
     console.log(`Deleting ${workingDir}`.red)
       // Cleanup! delete directory
