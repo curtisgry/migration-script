@@ -57,6 +57,7 @@ const makeRepoDataList = async (filter, filterOptions) => {
   } else {
     data = await getRepoData({username, password, workspace});
   }
+
   extractDataToArray(data, repoDataList);
 };
 
@@ -80,11 +81,13 @@ const cloneRepoList = async (arr) => {
     return;
   }
   for (const i in arr) {
-    const { clone, slug } = arr[i];
-    await cloneRepo(clone);
-    const link = await createGitHubRepo(slug);
-    newRepoLinks.push(link)
-    await pushToGithub(slug, link);
+     await migrateRepo(arr[i])
+
+    // const { clone, slug } = arr[i];
+    // await cloneRepo(clone);
+    // const link = await createGitHubRepo(slug);
+    // newRepoLinks.push(link)
+    // await pushToGithub(slug, link);
   }
 };
 
@@ -100,14 +103,55 @@ const createGitHubRepo = async (repoName) => {
       name: repoName,
     });
     const {clone_url} = test.data;
-    return clone_url;
+    newRepoLinks.push(clone_url);
 
   } catch (error) {
     console.log(`${error}`.red);
   }
 };
 
+const importToGithub = async ({owner, vcs_username, vcs_password, repo, vcs_url}) => {
+  console.log('Starting import to GitHub...')
+  try {
+    const res = await octokit.request(`PUT /repos/${owner}/${repo}/import`, {
+      owner,
+      repo: 'REPO',
+      vcs: 'git',
+      vcs_url,
+      vcs_username,
+      vcs_password
+    })
+    console.log(res.data.status_text)
+  } catch (error) {
+    console.log(error)
+  }
+  
+}
 
+const migrateRepo = async (info) => {
+  const {slug, url} = info;
+  await createGitHubRepo(slug)
+  await importToGithub({owner: ghUsername, vcs_username:username, vcs_password: password, repo: slug, vcs_url: url})
+  let completeStatus = false;
+  while (!completeStatus) {
+    await delay(2000)
+    const res = await octokit.request(`GET /repos/${ghUsername}/${slug}/import`, {
+      owner: 'OWNER',
+      repo: 'REPO'
+    })
+    if(res.data.status === 'complete') completeStatus = true
+    if(res.data.status === 'error') {
+    completeStatus = true
+    console.log('Error'.red)
+    console.log(res)
+    }
+    if(!res) {
+      completeStatus = true;
+      return console.log('Error during import no response from server')
+    }
+    console.log(res.data.status_text)
+  }
+}
 
 
 
