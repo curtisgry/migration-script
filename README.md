@@ -4,10 +4,6 @@
 
 This is a work-in-progress tool to migrate repositories from Bitbucket to GitHub.
 
-- Currently only works for single repository to public GitHub account for testing.
-- Just a demo at this point.
-- Needs some good refactoring
-
 ### Setup
 
 - Clone repo to local computer and npm install.
