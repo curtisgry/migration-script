@@ -3,12 +3,13 @@ const fs = require("fs");
 require("dotenv").config();
 const axios = require("axios");
 const colors = require("colors");
-const validate = require("./lib/inputValidation")
+const validate = require("./lib/inputValidation");
+const {extractDataToArray, getRepoData} = require('./lib/helpers')
 
 const simpleGit = require("simple-git");
 simpleGit().clean(simpleGit.CleanOptions.FORCE);
 
-const { Octokit, App } = require("octokit");
+const { Octokit } = require("octokit");
 // Create a personal access token at https://github.com/settings/tokens/new?scopes=repo
 const octokit = new Octokit({ auth: process.env.GH_ACCESS_TOKEN });
 
@@ -17,6 +18,11 @@ const octokit = new Octokit({ auth: process.env.GH_ACCESS_TOKEN });
 // const username = prompt('Enter your Bitbucket username: ')
 // const password = prompt('Enter your app password: ')
 
+//delay for testing
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Variables for testing
 const workspace = process.env.WORKSPACE;
 const username = process.env.USERNAME;
@@ -24,10 +30,10 @@ const password = process.env.PASSWORD;
 const ghUsername = process.env.GH_USERNAME;
 
 // Will be populated with all address links
-const repoDataList = [];
+let repoDataList = [];
 
 // Returns all data for repos from the api
-const getAllRepoData = async () => {
+const getAllRepoData = async ({username, password, workspace}) => {
   try {
     const res = await axios.get(
       `https://api.bitbucket.org/2.0/repositories/${workspace}`,
@@ -46,10 +52,10 @@ const getAllRepoData = async () => {
 };
 // Date format YYYY-MM-dd
 // Operators = != > >= < <=
-const getReposByDate = async ({ operator, date }) => {
+const getReposByDate = async ({username, password, workspace, operator, date }) => {
   try {
     const res = await axios.get(
-      `https://api.bitbucket.org/2.0/repositories/${workspace}?&q=updated_on${operator}${date}`,
+      `https://api.bitbucket.org/2.0/repositories/${workspace}?q=updated_on${operator}${date}`,
       {
         auth: {
           username,
@@ -65,30 +71,16 @@ const getReposByDate = async ({ operator, date }) => {
   }
 };
 
-//Pull data needed from api response data
-const extractDataToArray = (data, arr) => {
-  if (!data) return console.log("No repos found with search.");
-  let id = 0;
-  data.values.forEach((val) => {
-    const repoInfo = {
-      slug: val.slug,
-      clone: val.links.clone[0].href,
-      dateUpdated: val.updated_on,
-      id,
-    };
-    id++;
-    //currently pushing into global const repoDataList
-    arr.push(repoInfo);
-  });
-};
+
 
 //Populate repoDataList with slug and clone url
 const makeRepoDataList = async (filter, filterOptions) => {
+  const {operator, date} = filterOptions;
   let data;
   if (filter && filterOptions) {
-    data = await getReposByDate(filterOptions);
+    data = await getRepoData({username, password, workspace, operator, date});
   } else {
-    data = await getAllRepoData();
+    data = await getRepoData({username, password, workspace});
   }
   extractDataToArray(data, repoDataList);
 };
@@ -96,16 +88,32 @@ const makeRepoDataList = async (filter, filterOptions) => {
 // Clone repo from bitbucket
 const cloneRepo = async (repoLink) => {
   console.log(`Cloning`, `${repoLink} ...`.green);
-  await simpleGit().mirror(repoLink);
+  await simpleGit(__dirname + '/repos').mirror(repoLink);
+};
+
+const cloneRepoList = async (arr) => {
+  if (!arr.length) {
+    console.log("Error repo list empty!".red);
+    return;
+  }
+  for (const i in arr) {
+    const { clone, slug } = arr[i];
+    await cloneRepo(clone);
+    await createGitHubRepo(slug);
+    await pushToGithub(slug, clone);
+  }
 };
 
 const createGitHubRepo = async (repoName) => {
   console.log(`Creating GitHub repository...`.green);
   try {
     // will return data containing remote url probably better to use later
-    const test = await octokit.request(`POST /user/repos`, {
-      name: repoName,
-    });
+    // const test = await octokit.request(`POST /user/repos`, {
+    //   name: repoName,
+    // });
+
+    console.log("Make gh repo".cyan);
+    await delay(2000);
   } catch (error) {
     console.log(`${error}`.red);
   }
@@ -113,40 +121,34 @@ const createGitHubRepo = async (repoName) => {
 
 async function pushToGithub(gitName, remoteUrl) {
   // workingDir to set path for simpleGit
-  const workingDir = __dirname + `/${gitName}.git`;
+  const workingDir = __dirname + `/repos/${gitName}.git`;
   try {
     console.log(`Removing remote origin...`.bgGreen);
     //.removeRemote by  (name)
     await simpleGit(workingDir).removeRemote("origin");
     console.log(`Setting remote origin to ${remoteUrl}`.bgGreen);
     // .addremote takes (name, remote)
-    await simpleGit(workingDir).addRemote("origin", remoteUrl);
+    // await simpleGit(workingDir).addRemote("origin", remoteUrl);
+
+    console.log("Add remote".cyan);
+    await delay(2000);
     console.log(`Pushing repo to GitHub...`.rainbow);
     // simpleGit accepts flags as a second argument as an array of strings
-    await simpleGit(workingDir).push("origin", ["--mirror"]);
+    // await simpleGit(workingDir).push("origin", ["--mirror"]);
+    await delay(2000);
+    console.log("Push to Github".cyan);
+    await delay(2000);
+    console.log(`Deleting ${workingDir}`.red)
+      // Cleanup! delete directory
+    fs.rmdir(workingDir, { recursive: true }, (err) => {
+      if (err) {
+        throw err;
+      }
+    });
+    await delay(1000);
   } catch (error) {
     console.log(error);
   }
-}
-
-const checkOperatorInput = (op) => {
-  //Regex for comparison operators
-  const regex = /^(\!=|=|>|<|>=|<=)$/;
-  if (!op.match(regex)) return false;
-  return true;
-};
-
-const checkDateInput = (date) => {
-  //Regex for date format
-  const regex = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;
-  if (!date.match(regex)) return false;
-  return true;
-};
-
-const checkInputBool = (letter) => {
-    const regex = /^(y|n)$/;
-  if (!letter.match(regex)) return false;
-  return true;
 }
 
 const operatorInput = (operatorVar) => {
@@ -154,7 +156,7 @@ const operatorInput = (operatorVar) => {
 
   if (!validate.operator(operator)) {
     console.log("Invalid operator".red);
-    operatorInput(operatorVar);
+    return operatorInput(operatorVar);
   }
   operatorVar.operator = operator;
 };
@@ -163,34 +165,44 @@ const dateInput = (dateVar) => {
   const dateVal = prompt("Enter a date YYYY-MM-dd : ");
   if (!validate.date(dateVal)) {
     console.log("Invalid date".red);
-    dateInput(dateVar);
+    return dateInput(dateVar);
   }
   dateVar.date = dateVal;
 };
 
 const inputLoop = async () => {
-  //for testing
+  //reset repo list
+  repoDataList = [];
   const filterOptions = {};
-  const isFilteredList = prompt("Would you like to apply a filter by date?(y/n)")
+  const filterListInput = prompt(
+    "Would you like to apply a filter by date?(y/n)"
+  );
 
+  if (!validate.bool(filterListInput)) {
+    console.log("Please enter y or n".red);
+    inputLoop();
+  }
+
+  const isFilteredList = filterListInput === "y" ? true : false;
 
   if (isFilteredList) {
     operatorInput(filterOptions);
     dateInput(filterOptions);
   }
-  console.log(filterOptions);
 
   //get repo data into array
 
   await makeRepoDataList(isFilteredList, filterOptions);
-  // console.log(repoDataList)
+  console.log(repoDataList);
   if (!repoDataList.length) {
     console.log("No results".bgCyan);
-    inputLoop();
+    delete filterOptions, isFilteredList;
+    return inputLoop();
   } else {
     return;
   }
 };
+
 
 (async () => {
   // Authenticate octokit
@@ -200,26 +212,27 @@ const inputLoop = async () => {
   console.log("Hello, %s", login);
 
   await inputLoop();
+  const runConfirmedInput = prompt('Input GO to confirm and transfer list, press enter to cancel: ')
 
-  const { clone, slug } = repoDataList[0];
+  if(runConfirmedInput === "ENTER"){
+    await cloneRepoList(repoDataList);
+  } 
+
+  await inputLoop()
+  
+
   // create github remote repo
   //   await createGitHubRepo(slug);
-  const remoteUrl = `https://github.com/curtisgry/${slug}`;
+  //   const remoteUrl = `https://github.com/curtisgry/${slug}`;
   // clone repo from bitbucket
   //   await cloneRepo(clone);
   //for deleting folder later
-  const repoPath = __dirname + `/${slug}.git`;
+  //   const repoPath = __dirname + `/${slug}.git`;
   //repo name and remote url
   //   await pushToGithub(slug, remoteUrl);
 
-  // Cleanup! delete directory
-  //   await fs.rmdir(repoPath, { recursive: true }, (err) => {
-  //     if (err) {
-  //       throw err;
-  //     }
-  //     console.log(`Removing ${slug} directory...`);
-  //   });
+
 
   //   console.log(`Finished! Here is the new GitHub repo: ${remoteUrl}`.green);
-  console.log(repoDataList);
+  //   console.log(repoDataList);
 })();
