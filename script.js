@@ -10,9 +10,6 @@ simpleGit().clean(simpleGit.CleanOptions.FORCE);
 
 const { Octokit } = require("octokit");
 
-
-
-
 // Maybe use input for account info later instead of .env variables??
 // console.log('First, some info about your accounts...')
 // const username = prompt('Enter your Bitbucket username: ')
@@ -36,8 +33,10 @@ let repoDataList = [];
 let newRepoLinks = [];
 let isRepoList = null;
 let isFilteredList = null;
-
-
+ // Confirmation and input entry for list and single repo transfer
+ let runConfirmedInput = null;
+ let repoTransferId = null;
+ let singleRepo = null;
 
 //Populate repoDataList with slug and clone url
 const makeRepoDataList = async (filter, filterOptions) => {
@@ -52,7 +51,7 @@ const makeRepoDataList = async (filter, filterOptions) => {
 };
 
 
-const cloneRepoList = async (arr) => {
+const repoListTransfer = async (arr) => {
   if (!arr.length) {
     console.log("Error repo list empty!".red);
     return;
@@ -158,12 +157,6 @@ const dateInput = (dateVar) => {
 };
 
 
-
- // Confirmation and input entry for list and single repo transfer
- let runConfirmedInput = null;
- let repoTransferId = null;
- let singleRepo = null;
-
 //Main console input loop
 const inputLoop = async () => {
   //reset repo list
@@ -254,7 +247,7 @@ const inputLoop = async () => {
   
   //Final conditionals to run the import
   if(isRepoList && runConfirmedInput === "GO"){
-    await cloneRepoList(repoDataList);
+    await repoListTransfer(repoDataList);
     newRepoLinks.forEach(link => {
       console.log(`Finished! Here is the new GitHub repo: ${link}`.green);
     })
@@ -264,7 +257,7 @@ const inputLoop = async () => {
     await inputLoop()
 
   } else {
-    await cloneRepoList([singleRepo])
+    await repoListTransfer([singleRepo])
     console.log(`Finished! Here is the new GitHub repo: ${newRepoLinks}`.green);
   }
     
