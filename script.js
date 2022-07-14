@@ -3,15 +3,12 @@ const fs = require("fs");
 require("dotenv").config();
 const colors = require("colors");
 const validate = require("./lib/inputValidation");
-const {extractDataToArray, getRepoData} = require('./lib/helpers')
+const {extractDataToArray, getRepoData, delay} = require('./lib/helpers')
 
 const simpleGit = require("simple-git");
 simpleGit().clean(simpleGit.CleanOptions.FORCE);
 
 const { Octokit } = require("octokit");
-
-
-
 
 // Maybe use input for account info later instead of .env variables??
 // console.log('First, some info about your accounts...')
@@ -21,16 +18,7 @@ const { Octokit } = require("octokit");
 // const ghUsername = prompt('Enter your Github username: ')
 // const ghAccessToken = prompt('Enter your Github personal access token: ')
 
-
-
-
-//delay for testing
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-
-// Variables for testing
+// Variables from .env
 const workspace = process.env.WORKSPACE;
 const username = process.env.USERNAME;
 const password = process.env.PASSWORD;
@@ -45,8 +33,10 @@ let repoDataList = [];
 let newRepoLinks = [];
 let isRepoList = null;
 let isFilteredList = null;
-
-
+ // Confirmation and input entry for list and single repo transfer
+ let runConfirmedInput = null;
+ let repoTransferId = null;
+ let singleRepo = null;
 
 //Populate repoDataList with slug and clone url
 const makeRepoDataList = async (filter, filterOptions) => {
@@ -61,46 +51,25 @@ const makeRepoDataList = async (filter, filterOptions) => {
 };
 
 
-
-
-
-// Clone repo from bitbucket
-const cloneRepo = async (repoLink) => {
-  console.log(`Cloning`, `${repoLink} ...`.green);
-  await simpleGit(__dirname + '/repos').mirror(repoLink);
-};
-
-
-
-
-
-const cloneRepoList = async (arr) => {
+const repoListTransfer = async (arr) => {
   if (!arr.length) {
     console.log("Error repo list empty!".red);
     return;
   }
   for (const i in arr) {
-    const { clone, slug } = arr[i];
-    await cloneRepo(clone);
-    const link = await createGitHubRepo(slug);
-    newRepoLinks.push(link)
-    await pushToGithub(slug, link);
+     await migrateRepo(arr[i])
   }
 };
-
-
-
 
 
 const createGitHubRepo = async (repoName) => {
   console.log(`Creating GitHub repository...`.green);
   try {
-    // will return data containing remote url probably better to use later
-    const test = await octokit.request(`POST /user/repos`, {
+    const res = await octokit.request(`POST /user/repos`, {
       name: repoName,
     });
-    const {clone_url} = test.data;
-    return clone_url;
+    const {clone_url} = res.data;
+    newRepoLinks.push(clone_url);
 
   } catch (error) {
     console.log(`${error}`.red);
@@ -108,39 +77,63 @@ const createGitHubRepo = async (repoName) => {
 };
 
 
-
-
-
-async function pushToGithub(gitName, remoteUrl) {
-  if(!gitName && remoteUrl) return console.log('Error, missing name or url'.red)
-  // workingDir to set path for simpleGit
-  const workingDir = __dirname + `/repos/${gitName}.git`;
+const importToGithub = async ({owner, vcs_username, vcs_password, repo, vcs_url}) => {
+  console.log('Starting import to GitHub...')
   try {
-    console.log(`Removing remote origin...`.bgGreen);
-    //.removeRemote by  (name)
-    await simpleGit(workingDir).removeRemote("origin");
-    console.log(`Setting remote origin to ${remoteUrl}`.bgGreen);
-    // .addremote takes (name, remote)
-    await simpleGit(workingDir).addRemote("origin", remoteUrl);
-    console.log(`Pushing repo to GitHub...`.rainbow);
-    // simpleGit accepts flags as a second argument as an array of strings
-    await simpleGit(workingDir).push("origin", ["--mirror"]);
-    await delay(2000);
-    console.log(`Deleting ${workingDir}`.red)
-      // Cleanup! delete directory
-    fs.rmdir(workingDir, { recursive: true }, (err) => {
-      if (err) {
-        throw err;
-      }
-    });
-    await delay(1000);
+    const res = await octokit.request(`PUT /repos/${owner}/${repo}/import`, {
+      owner,
+      repo: 'REPO',
+      vcs: 'git',
+      vcs_url,
+      vcs_username,
+      vcs_password
+    })
+    console.log(res.data.status_text)
   } catch (error) {
-    console.log(error);
+    console.log(error)
   }
+  
 }
 
+//This one handles all the transfering
+const migrateRepo = async (info) => {
+  const {slug, url} = info;
 
+  // create new repo on GitHub
+  await createGitHubRepo(slug)
 
+  // Import from Bitbucket
+  await importToGithub({owner: ghUsername, vcs_username:username, vcs_password: password, repo: slug, vcs_url: url})
+
+  //Complete status conditional for status update loop
+  let completeStatus = false;
+
+  // Get status from API during import
+  while (!completeStatus) {
+
+    // Delay timing here effects how often we get the status from the API
+    await delay(1000)
+    const res = await octokit.request(`GET /repos/${ghUsername}/${slug}/import`, {
+      owner: 'OWNER',
+      repo: 'REPO'
+    })
+
+    // Status check stuff and stop the loop
+    if(res.data.status === 'complete') completeStatus = true
+    if(res.data.status === 'error') {
+    completeStatus = true
+    console.log('Error'.red)
+    console.log(res)
+    }
+    if(!res) {
+      completeStatus = true;
+      return console.log('Error during import no response from server')
+    }
+
+    // Log status each loop
+    console.log(res.data.status_text)
+  }
+}
 
 
 const operatorInput = (operatorVar) => {
@@ -154,9 +147,6 @@ const operatorInput = (operatorVar) => {
 };
 
 
-
-
-
 const dateInput = (dateVar) => {
   const dateVal = prompt("Enter a date YYYY-MM-dd : ");
   if (!validate.date(dateVal)) {
@@ -167,9 +157,7 @@ const dateInput = (dateVar) => {
 };
 
 
-
-
-
+//Main console input loop
 const inputLoop = async () => {
   //reset repo list
   repoDataList = [];
@@ -177,48 +165,70 @@ const inputLoop = async () => {
   //Init filter options
   const filterOptions = {};
 
+
   // If this prompt has already been set skip it
   if(isFilteredList === null) {
     const filterListInput = prompt(
       "Would you like to apply a filter by date?(y/n):"
     );
-   
   
     if (!validate.bool(filterListInput)) {
       console.log("Please enter y or n".red);
-      await inputLoop();
+      return inputLoop();
     }
+
     isFilteredList = filterListInput === "y" ? true : false;
   }
 
-
+  //Set list filter options
   if (isFilteredList) {
     operatorInput(filterOptions);
     dateInput(filterOptions);
   }
 
-  const singleOrListInput = prompt(
-    "Would you like to transfer a list or single repo? (list,single):"
-  );
 
-
-  if(!validate.words(singleOrListInput, ['list', 'single'])){
-    console.log('Invalid input'.red)
-    await inputLoop();
+  // If this prompt has already been set skip it
+  if(isRepoList === null) {
+    const singleOrListInput = prompt(
+      "Would you like to transfer a list or single repo? (list,single):"
+    );
+  
+    if(!validate.words(singleOrListInput, ['list', 'single'])){
+      console.log('Invalid input'.red)
+      return inputLoop();
+    }
+    isRepoList = singleOrListInput.toLowerCase() === "list" ? true : false;
   }
-  isRepoList = singleOrListInput.toLowerCase() === "list" ? true : false;
-
+  
+  
   //get repo data into array
   await makeRepoDataList(isFilteredList, filterOptions);
 
+  //List repos to console and check if there were results
   console.log(repoDataList);
   if (!repoDataList.length) {
     console.log("No results".bgCyan);
     delete filterOptions, isFilteredList;
     return inputLoop();
+  } 
+
+  if(isRepoList) {
+    runConfirmedInput = prompt('Input GO to confirm and transfer list, press enter to cancel: ')
   } else {
-    return;
+    repoTransferId = prompt('Enter ID number for the repo to transter:')
+
+    if(validate.minMax(repoTransferId, 0, repoDataList.length - 1)){
+      console.log('Invalid ID'.red)
+      repoTransferId = null;
+      return inputLoop()
+    }
+
+    singleRepo = repoDataList.find(repo => repo.id === parseInt(repoTransferId))
+    console.log(singleRepo)
+    runConfirmedInput = prompt('Input GO to confirm and transfer repo, press enter to cancel: ')
   }
+
+  
 };
 
 
@@ -232,36 +242,22 @@ const inputLoop = async () => {
   } = await octokit.rest.users.getAuthenticated();
   console.log("Hello, %s", login);
 
+  //Recieve all inputs
   await inputLoop();
   
-
-
-  // Confirmation and input entry for list and single repo transfer
-  let runConfirmedInput = null;
-  let repoTransferId = null;
-  let singleRepo = null;
-  console.log('is repo list', isRepoList)
-  if(isRepoList) {
-    runConfirmedInput = prompt('Input GO to confirm and transfer list, press enter to cancel: ')
-  } else {
-    repoTransferId = prompt('Enter ID number for the repo to transter:')
-    singleRepo = repoDataList.find(repo => repo.id === parseInt(repoTransferId))
-    console.log(singleRepo)
-    runConfirmedInput = prompt('Input GO to confirm and transfer repo, press enter to cancel: ')
-  }
-  
-
+  //Final conditionals to run the import
   if(isRepoList && runConfirmedInput === "GO"){
-    await cloneRepoList(repoDataList);
+    await repoListTransfer(repoDataList);
     newRepoLinks.forEach(link => {
       console.log(`Finished! Here is the new GitHub repo: ${link}`.green);
     })
-    
+  // Dont do it
   }else if (runConfirmedInput !== "GO") {
     console.log('No GO!'.red)
     await inputLoop()
+
   } else {
-    await cloneRepoList([singleRepo])
+    await repoListTransfer([singleRepo])
     console.log(`Finished! Here is the new GitHub repo: ${newRepoLinks}`.green);
   }
     

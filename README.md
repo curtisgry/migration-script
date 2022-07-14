@@ -20,3 +20,9 @@ WORKSPACE=<bitbucket-workspace-name>
 GH_USERNAME=<github-username>
 GH_ACCESS_TOKEN=<github-access-token>
 ```
+
+- Start the script
+
+```
+npm start
+```
